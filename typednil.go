@@ -39,15 +39,12 @@ func (f *isTypedNilFunc) String() string {
 var _ fmt.Stringer = (*isTypedNilFunc)(nil)
 
 type analyzer struct {
-	//typedNil map[ssa.Value]bool
 	pass *analysis.Pass
 }
 
 func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 	a.pass = pass
 	a.findTypedNilFunc()
-	//a.typedNil = make(map[ssa.Value]bool)
-	//a.findTypedNilValue()
 	a.findTypedNilCmp()
 	return nil, nil
 }
