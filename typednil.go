@@ -83,7 +83,7 @@ func (a *analyzer) typedNilFunc(v *ssa.Call) *isTypedNilFunc {
 	}
 
 	fun, _ := v.Call.Value.(*ssa.Function)
-	if fun == nil {
+	if fun == nil || fun.Object() == nil {
 		return nil
 	}
 
