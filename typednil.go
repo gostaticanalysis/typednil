@@ -152,7 +152,7 @@ func (a *analyzer) findTypedNilCmp() {
 
 				if (a.isTypedNil(binOp.X) && a.isUntypedNil(binOp.Y)) ||
 					(a.isTypedNil(binOp.Y) && a.isUntypedNil(binOp.X)) {
-					a.pass.Reportf(binOp.Pos(), "typed nil")
+					a.pass.Reportf(binOp.Pos(), "it may become a comparition a typed nil and an untyped nil")
 				}
 			}
 		}

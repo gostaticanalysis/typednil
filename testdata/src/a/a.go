@@ -4,14 +4,14 @@ import "a/b"
 
 func f1() {
 	err := e()
-	if err != nil { // want "typed nil"
+	if err != nil { // want "it may become a comparition a typed nil and an untyped nil"
 		print(err)
 	}
 }
 
 func f2() {
 	err := b.E()
-	if err != nil { // want "typed nil"
+	if err != nil { // want "it may become a comparition a typed nil and an untyped nil"
 		print(err)
 	}
 }
