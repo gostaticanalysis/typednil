@@ -55,9 +55,8 @@ func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 func (a *analyzer) isTypedNil(v ssa.Value) bool {
 	switch v := v.(type) {
 	case *ssa.MakeInterface:
-		return a.isTypedNil(v.X)
-	case *ssa.Const:
-		return v.IsNil() && !types.Identical(v.Type(), types.Typ[types.UntypedNil])
+		cnst, _ := v.X.(*ssa.Const)
+		return cnst != nil && cnst.IsNil() && !types.Identical(cnst.Type(), types.Typ[types.UntypedNil])
 	case *ssa.Call:
 		fact := a.typedNilFunc(v)
 		return fact != nil && len(fact.Index) == 1
@@ -111,6 +110,11 @@ func (a *analyzer) isUntypedNil(v ssa.Value) bool {
 func (a *analyzer) findTypedNilFunc() {
 	s := a.pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	for _, f := range s.SrcFuncs {
+		obj := f.Object()
+		if obj == nil {
+			continue
+		}
+
 		rets := analysisutil.Returns(f)
 		var index []int
 		exclude := make(map[int]bool)
@@ -134,7 +138,7 @@ func (a *analyzer) findTypedNilFunc() {
 
 		if index != nil {
 			fact := &isTypedNilFunc{Index: index}
-			a.pass.ExportObjectFact(f.Object(), fact)
+			a.pass.ExportObjectFact(obj, fact)
 		}
 	}
 }

@@ -16,6 +16,13 @@ func f2() {
 	}
 }
 
+func f3() {
+	err := b.NE()
+	if err != nil { // OK
+		print(err)
+	}
+}
+
 func e() error { // want e:`isTypedFunc\[0\]`
 	var err *struct{error}
 	return err
