@@ -59,3 +59,10 @@ func f6() {
 		print(err)
 	}
 }
+
+func f7() {
+	err := b.NE2()
+	if err != nil { // OK
+		print(err)
+	}
+}

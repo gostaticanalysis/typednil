@@ -41,8 +41,14 @@ func (k nilableKind) String() string {
 	}
 }
 
+type result struct {
+	Pos  token.Position
+	Kind nilableKind
+}
+
 type isNilable struct {
-	Results map[int]nilableKind
+	Name    string
+	Results map[int]result
 }
 
 func (*isNilable) AFact() {}
@@ -51,8 +57,8 @@ var _ analysis.Fact = (*isNilable)(nil)
 
 func (f *isNilable) String() string {
 	rets := make([]string, 0, len(f.Results))
-	for index, kind := range f.Results {
-		rets = append(rets, fmt.Sprintf("%v:%v", index, kind))
+	for index, r := range f.Results {
+		rets = append(rets, fmt.Sprintf("%v:%v", index, r.Kind))
 	}
 	return fmt.Sprintf("nilable results [%v]", strings.Join(rets, ","))
 }
@@ -65,17 +71,20 @@ type analyzer struct {
 
 func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 	a.pass = pass
-	a.findTypedNilFunc()
+	a.findNilable()
 	a.findTypedNilCmp()
 	return nil, nil
 }
 
-func (a *analyzer) isTypedNil(v ssa.Value) bool {
+func (a *analyzer) isTypedNil(v ssa.Value) (reason string) {
 	switch v := v.(type) {
 	case *ssa.MakeInterface:
 		switch x := v.X.(type) {
 		case *ssa.Const:
-			return x.IsNil()
+			if x.IsNil() && !types.Identical(x.Type(), types.Typ[types.UntypedNil]) {
+				return fmt.Sprintf("%v convert to interface", x)
+			}
+			return ""
 		default:
 			return a.nilableFuncCall(x, concreteNilable)
 		}
@@ -84,32 +93,36 @@ func (a *analyzer) isTypedNil(v ssa.Value) bool {
 	}
 }
 
-func (a *analyzer) nilableFuncCall(v ssa.Value, kind nilableKind) bool {
+func (a *analyzer) nilableFuncCall(v ssa.Value, kind nilableKind) string {
 	switch v := v.(type) {
 	case *ssa.Call:
 		fact := a.importFact(v)
 		if fact == nil {
-			return false
+			return ""
 		}
-		if k, ok := fact.Results[0]; ok && k == kind {
-			return true
+		if r, ok := fact.Results[0]; ok && r.Kind == kind {
+			reason := fact.Name + " may become typed nil"
+			if r.Pos.IsValid() {
+				reason += " in " + r.Pos.String()
+			}
+			return reason
 		}
-		return false
+		return ""
 	case *ssa.Extract:
 		call, _ := v.Tuple.(*ssa.Call)
 		if call == nil {
-			return false
+			return ""
 		}
 		fact := a.importFact(call)
 		if fact == nil {
-			return false
+			return ""
 		}
-		if k, ok := fact.Results[v.Index]; ok && k == kind {
-			return true
+		if r, ok := fact.Results[v.Index]; ok && r.Kind == kind {
+			return fmt.Sprintf("%s may become typed nil in %v", fact.Name, r.Pos)
 		}
-		return false
+		return ""
 	default:
-		return false
+		return ""
 	}
 }
 
@@ -140,7 +153,7 @@ func (a *analyzer) isCostNil(v ssa.Value) bool {
 	return false
 }
 
-func (a *analyzer) findTypedNilFunc() {
+func (a *analyzer) findNilable() {
 	s := a.pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	for _, f := range s.SrcFuncs {
 		obj := f.Object()
@@ -149,24 +162,32 @@ func (a *analyzer) findTypedNilFunc() {
 		}
 
 		rets := analysisutil.Returns(f)
-		results := make(map[int]nilableKind)
+		results := make(map[int]result)
 		for _, ret := range rets {
+			if len(ret.Block().Succs) == 0 {
+				continue
+			}
 			for i, r := range ret.Results {
 				if _, ok := results[i]; ok {
 					continue
 				}
 
+				sr := f.Signature.Results().At(i)
+				pos := a.pass.Fset.Position(ret.Pos())
 				switch {
-				case types.IsInterface(r.Type()) && a.isTypedNil(r):
-					results[i] = interfaceNilable
-				case !types.IsInterface(r.Type()) && a.isCostNil(r):
-					results[i] = concreteNilable
+				case types.IsInterface(r.Type()) && a.isTypedNil(r) != "":
+					results[i] = result{Pos: pos, Kind: interfaceNilable}
+				case !types.IsInterface(sr.Type()) && a.isCostNil(r):
+					results[i] = result{Pos: pos, Kind: concreteNilable}
 				}
 			}
 		}
 
 		if len(results) != 0 {
-			fact := &isNilable{Results: results}
+			fact := &isNilable{
+				Name:    f.String(),
+				Results: results,
+			}
 			a.pass.ExportObjectFact(obj, fact)
 		}
 	}
@@ -183,9 +204,14 @@ func (a *analyzer) findTypedNilCmp() {
 					continue
 				}
 
-				if (a.isTypedNil(binOp.X) && a.isCostNil(binOp.Y)) ||
-					(a.isTypedNil(binOp.Y) && a.isCostNil(binOp.X)) {
-					a.pass.Reportf(binOp.Pos(), "it may become a comparition a typed nil and an untyped nil")
+				if reason := a.isTypedNil(binOp.X); reason != "" && a.isCostNil(binOp.Y) {
+					a.pass.Reportf(binOp.Pos(), "it may become a comparition a typed nil and an untyped nil because %s", reason)
+					continue
+				}
+
+				if reason := a.isTypedNil(binOp.Y); reason != "" && a.isCostNil(binOp.X) {
+					a.pass.Reportf(binOp.Pos(), "it may become a comparition a typed nil and an untyped nil because %s", reason)
+					continue
 				}
 			}
 		}

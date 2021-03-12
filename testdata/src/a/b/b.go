@@ -11,6 +11,10 @@ func NE() error {
 	return nil
 }
 
+func NE2() error {
+	return NE()
+}
+
 func CE1() (int, *MyError) { // want CE1:`nilable results \[1:C\]`
 	return 0, nil
 }
