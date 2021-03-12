@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"github.com/gostaticanalysis/analysisutil"
 	"golang.org/x/tools/go/analysis"
@@ -21,22 +22,42 @@ var Analyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{
 		buildssa.Analyzer,
 	},
-	FactTypes: []analysis.Fact{new(isTypedNilFunc)},
+	FactTypes: []analysis.Fact{new(isNilable)},
 }
 
-type isTypedNilFunc struct {
-	Index []int
+type nilableKind int
+
+const (
+	interfaceNilable nilableKind = iota
+	concreteNilable
+)
+
+func (k nilableKind) String() string {
+	switch k {
+	case interfaceNilable:
+		return "I"
+	default:
+		return "C"
+	}
 }
 
-func (*isTypedNilFunc) AFact() {}
-
-var _ analysis.Fact = (*isTypedNilFunc)(nil)
-
-func (f *isTypedNilFunc) String() string {
-	return fmt.Sprintf("isTypedFunc%v", f.Index)
+type isNilable struct {
+	Results map[int]nilableKind
 }
 
-var _ fmt.Stringer = (*isTypedNilFunc)(nil)
+func (*isNilable) AFact() {}
+
+var _ analysis.Fact = (*isNilable)(nil)
+
+func (f *isNilable) String() string {
+	rets := make([]string, 0, len(f.Results))
+	for index, kind := range f.Results {
+		rets = append(rets, fmt.Sprintf("%v:%v", index, kind))
+	}
+	return fmt.Sprintf("nilable results [%v]", strings.Join(rets, ","))
+}
+
+var _ fmt.Stringer = (*isNilable)(nil)
 
 type analyzer struct {
 	pass *analysis.Pass
@@ -52,24 +73,39 @@ func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 func (a *analyzer) isTypedNil(v ssa.Value) bool {
 	switch v := v.(type) {
 	case *ssa.MakeInterface:
-		cnst, _ := v.X.(*ssa.Const)
-		return cnst != nil && cnst.IsNil() && !types.Identical(cnst.Type(), types.Typ[types.UntypedNil])
+		switch x := v.X.(type) {
+		case *ssa.Const:
+			return x.IsNil()
+		default:
+			return a.nilableFuncCall(x, concreteNilable)
+		}
+	default:
+		return a.nilableFuncCall(v, interfaceNilable)
+	}
+}
+
+func (a *analyzer) nilableFuncCall(v ssa.Value, kind nilableKind) bool {
+	switch v := v.(type) {
 	case *ssa.Call:
-		fact := a.typedNilFunc(v)
-		return fact != nil && len(fact.Index) == 1
+		fact := a.importFact(v)
+		if fact == nil {
+			return false
+		}
+		if k, ok := fact.Results[0]; ok && k == kind {
+			return true
+		}
+		return false
 	case *ssa.Extract:
 		call, _ := v.Tuple.(*ssa.Call)
 		if call == nil {
 			return false
 		}
-		fact := a.typedNilFunc(call)
+		fact := a.importFact(call)
 		if fact == nil {
 			return false
 		}
-		for _, i := range fact.Index {
-			if i == v.Index {
-				return true
-			}
+		if k, ok := fact.Results[v.Index]; ok && k == kind {
+			return true
 		}
 		return false
 	default:
@@ -77,7 +113,7 @@ func (a *analyzer) isTypedNil(v ssa.Value) bool {
 	}
 }
 
-func (a *analyzer) typedNilFunc(v *ssa.Call) *isTypedNilFunc {
+func (a *analyzer) importFact(v *ssa.Call) *isNilable {
 	if v.Call.Method != nil {
 		return nil
 	}
@@ -87,7 +123,7 @@ func (a *analyzer) typedNilFunc(v *ssa.Call) *isTypedNilFunc {
 		return nil
 	}
 
-	var fact isTypedNilFunc
+	var fact isNilable
 	ok := a.pass.ImportObjectFact(fun.Object(), &fact)
 	if ok {
 		return &fact
@@ -96,7 +132,7 @@ func (a *analyzer) typedNilFunc(v *ssa.Call) *isTypedNilFunc {
 	return nil
 }
 
-func (a *analyzer) isUntypedNil(v ssa.Value) bool {
+func (a *analyzer) isCostNil(v ssa.Value) bool {
 	switch v := v.(type) {
 	case *ssa.Const:
 		return v.IsNil()
@@ -113,28 +149,24 @@ func (a *analyzer) findTypedNilFunc() {
 		}
 
 		rets := analysisutil.Returns(f)
-		var index []int
-		exclude := make(map[int]bool)
+		results := make(map[int]nilableKind)
 		for _, ret := range rets {
 			for i, r := range ret.Results {
-				if exclude[i] {
+				if _, ok := results[i]; ok {
 					continue
 				}
 
-				if !types.IsInterface(r.Type().Underlying()) {
-					exclude[i] = true
-					continue
-				}
-
-				if a.isTypedNil(r) {
-					index = append(index, i)
-					exclude[i] = true
+				switch {
+				case types.IsInterface(r.Type()) && a.isTypedNil(r):
+					results[i] = interfaceNilable
+				case !types.IsInterface(r.Type()) && a.isCostNil(r):
+					results[i] = concreteNilable
 				}
 			}
 		}
 
-		if index != nil {
-			fact := &isTypedNilFunc{Index: index}
+		if len(results) != 0 {
+			fact := &isNilable{Results: results}
 			a.pass.ExportObjectFact(obj, fact)
 		}
 	}
@@ -151,8 +183,8 @@ func (a *analyzer) findTypedNilCmp() {
 					continue
 				}
 
-				if (a.isTypedNil(binOp.X) && a.isUntypedNil(binOp.Y)) ||
-					(a.isTypedNil(binOp.Y) && a.isUntypedNil(binOp.X)) {
+				if (a.isTypedNil(binOp.X) && a.isCostNil(binOp.Y)) ||
+					(a.isTypedNil(binOp.Y) && a.isCostNil(binOp.X)) {
 					a.pass.Reportf(binOp.Pos(), "it may become a comparition a typed nil and an untyped nil")
 				}
 			}
