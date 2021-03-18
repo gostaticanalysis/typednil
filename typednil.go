@@ -164,9 +164,6 @@ func (a *analyzer) findNilable() {
 		rets := analysisutil.Returns(f)
 		results := make(map[int]result)
 		for _, ret := range rets {
-			if len(ret.Block().Succs) == 0 {
-				continue
-			}
 			for i, r := range ret.Results {
 				if _, ok := results[i]; ok {
 					continue
@@ -195,25 +192,22 @@ func (a *analyzer) findNilable() {
 
 func (a *analyzer) findTypedNilCmp() {
 	s := a.pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
-	for _, f := range s.SrcFuncs {
-		for _, b := range f.Blocks {
-			for _, instr := range b.Instrs {
-				binOp, _ := instr.(*ssa.BinOp)
-				if binOp == nil ||
-					(binOp.Op != token.EQL && binOp.Op != token.NEQ) {
-					continue
-				}
-
-				if reason := a.isTypedNil(binOp.X); reason != "" && a.isCostNil(binOp.Y) {
-					a.pass.Reportf(binOp.Pos(), "it may become a comparition a typed nil and an untyped nil because %s", reason)
-					continue
-				}
-
-				if reason := a.isTypedNil(binOp.Y); reason != "" && a.isCostNil(binOp.X) {
-					a.pass.Reportf(binOp.Pos(), "it may become a comparition a typed nil and an untyped nil because %s", reason)
-					continue
-				}
-			}
+	analysisutil.InspectFuncs(s.SrcFuncs, func(_ int, instr ssa.Instruction) bool {
+		binOp, _ := instr.(*ssa.BinOp)
+		if binOp == nil || (binOp.Op != token.EQL && binOp.Op != token.NEQ) {
+			return true
 		}
-	}
+
+		if reason := a.isTypedNil(binOp.X); reason != "" && a.isCostNil(binOp.Y) {
+			a.pass.Reportf(binOp.Pos(), "it may become a comparition a typed nil and an untyped nil because %s", reason)
+			return true
+		}
+
+		if reason := a.isTypedNil(binOp.Y); reason != "" && a.isCostNil(binOp.X) {
+			a.pass.Reportf(binOp.Pos(), "it may become a comparition a typed nil and an untyped nil because %s", reason)
+			return true
+		}
+
+		return true
+	})
 }
