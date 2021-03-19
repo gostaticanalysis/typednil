@@ -9,20 +9,20 @@ func e() error { // want e:`nilable results \[0:I\]`
 
 func f1() {
 	err := e()
-	if err != nil { // want "it may become a comparition a typed nil and an untyped nil"
+	if err != nil { // want "it may become a comparison between a typed nil and an untyped nil"
 		print(err)
 	}
-	if err == nil { // want "it may become a comparition a typed nil and an untyped nil"
+	if err == nil { // want "it may become a comparison between a typed nil and an untyped nil"
 		print(err)
 	}
 }
 
 func f2() {
 	err := b.E()
-	if err != nil { // want "it may become a comparition a typed nil and an untyped nil"
+	if err != nil { // want "it may become a comparison between a typed nil and an untyped nil"
 		print(err)
 	}
-	if err == nil { // want "it may become a comparition a typed nil and an untyped nil"
+	if err == nil { // want "it may become a comparison between a typed nil and an untyped nil"
 		print(err)
 	}
 }
@@ -37,10 +37,10 @@ func f3() {
 func f4() {
 	var err error
 	_, err = b.CE1()
-	if err != nil { // want "it may become a comparition a typed nil and an untyped nil"
+	if err != nil { // want "it may become a comparison between a typed nil and an untyped nil"
 		print(err)
 	}
-	if err == nil { // want "it may become a comparition a typed nil and an untyped nil"
+	if err == nil { // want "it may become a comparison between a typed nil and an untyped nil"
 		print(err)
 	}
 }
