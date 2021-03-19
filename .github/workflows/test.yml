@@ -41,9 +41,9 @@ jobs:
 
     - name: Install tennvet
       run: |
-        GOBIN=`pwd` go install github.com/tenntenn/tennvet@latest
+        GOBIN=$(pwd) go install github.com/tenntenn/tennvet@latest
 
     - name: Test and vet
       run: |
-        go vet -vettool=`pwd/tennvet` ./...
+        go vet -vettool=$(pwd)/tennvet ./...
         go test -v -race ./...
