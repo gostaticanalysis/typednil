@@ -12,9 +12,9 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-const doc = "typednil finds a comparition between typed nil and untyped nil"
+const doc = "typednil finds a comparison between typed nil and untyped nil"
 
-// Analyzer finds a comparition between typed nil and untyped nil
+// Analyzer finds a comparison between typed nil and untyped nil
 var Analyzer = &analysis.Analyzer{
 	Name: "typednil",
 	Doc:  doc,
@@ -199,12 +199,12 @@ func (a *analyzer) findTypedNilCmp() {
 		}
 
 		if reason := a.isTypedNil(binOp.X); reason != "" && a.isCostNil(binOp.Y) {
-			a.pass.Reportf(binOp.Pos(), "it may become a comparition a typed nil and an untyped nil because %s", reason)
+			a.pass.Reportf(binOp.Pos(), "it may become a comparison between a typed nil and an untyped nil because %s", reason)
 			return true
 		}
 
 		if reason := a.isTypedNil(binOp.Y); reason != "" && a.isCostNil(binOp.X) {
-			a.pass.Reportf(binOp.Pos(), "it may become a comparition a typed nil and an untyped nil because %s", reason)
+			a.pass.Reportf(binOp.Pos(), "it may become a comparison between a typed nil and an untyped nil because %s", reason)
 			return true
 		}
 

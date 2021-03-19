@@ -2,7 +2,7 @@
 
 [![pkg.go.dev][gopkg-badge]][gopkg]
 
-`typednil` finds a comparition between typed nil and untyped nil.
+`typednil` finds a comparison between typed nil and untyped nil.
 
 ```go
 func f() {
